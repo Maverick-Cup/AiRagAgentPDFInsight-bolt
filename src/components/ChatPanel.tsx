@@ -123,6 +123,92 @@ export const ChatPanel: React.FC = () => {
     inputRef.current?.focus();
   };
 
+  // Format message content for better readability
+  const formatMessageContent = (content: string) => {
+    // Split content into sections
+    const sections = content.split('\n\n');
+    
+    return sections.map((section, index) => {
+      const trimmedSection = section.trim();
+      if (!trimmedSection) return null;
+      
+      // Handle headers (## or **)
+      if (trimmedSection.startsWith('## ')) {
+        const headerText = trimmedSection.substring(3);
+        return (
+          <div key={index} className="mb-4">
+            <h3 className="text-lg font-bold text-gray-900 mb-2 pb-1 border-b border-gray-200">
+              {headerText}
+            </h3>
+          </div>
+        );
+      }
+      
+      // Handle bold sections (**text**)
+      if (trimmedSection.startsWith('**') && trimmedSection.endsWith('**')) {
+        const boldText = trimmedSection.slice(2, -2);
+        return (
+          <div key={index} className="mb-3">
+            <p className="font-semibold text-gray-800 text-sm uppercase tracking-wide">
+              {boldText}
+            </p>
+          </div>
+        );
+      }
+      
+      // Handle bullet points
+      if (trimmedSection.includes('- ')) {
+        const lines = trimmedSection.split('\n');
+        const bulletPoints = lines.filter(line => line.trim().startsWith('- '));
+        const otherLines = lines.filter(line => !line.trim().startsWith('- ') && line.trim());
+        
+        return (
+          <div key={index} className="mb-4">
+            {otherLines.length > 0 && (
+              <div className="mb-2">
+                {otherLines.map((line, lineIndex) => (
+                  <p key={lineIndex} className="text-gray-700 leading-relaxed mb-1">
+                    {line.trim()}
+                  </p>
+                ))}
+              </div>
+            )}
+            {bulletPoints.length > 0 && (
+              <ul className="space-y-1 ml-4">
+                {bulletPoints.map((point, pointIndex) => (
+                  <li key={pointIndex} className="text-gray-700 leading-relaxed flex items-start">
+                    <span className="text-blue-500 mr-2 mt-1.5 flex-shrink-0">•</span>
+                    <span>{point.substring(2).trim()}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      }
+      
+      // Handle note sections
+      if (trimmedSection.includes('**Note:**')) {
+        return (
+          <div key={index} className="mt-4 p-3 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg">
+            <p className="text-blue-800 text-sm leading-relaxed">
+              {trimmedSection.replace('**Note:**', '').trim()}
+            </p>
+          </div>
+        );
+      }
+      
+      // Regular paragraphs
+      return (
+        <div key={index} className="mb-3">
+          <p className="text-gray-700 leading-relaxed">
+            {trimmedSection}
+          </p>
+        </div>
+      );
+    }).filter(Boolean);
+  };
+
   if (!activeDocument) {
     return null;
   }
@@ -234,7 +320,7 @@ export const ChatPanel: React.FC = () => {
         )}
       </div>
       
-      <div className="flex-grow overflow-y-auto p-4 space-y-4">
+      <div className="flex-grow overflow-y-auto p-4 space-y-6">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Bot className="h-12 w-12 text-blue-500 mb-4" />
@@ -276,65 +362,60 @@ export const ChatPanel: React.FC = () => {
               }`}
             >
               <div
-                className={`max-w-[85%] rounded-lg p-4 ${
+                className={`max-w-[85%] rounded-lg shadow-sm ${
                   message.sender === 'user'
-                    ? 'bg-blue-600 text-white rounded-tr-none'
+                    ? 'bg-blue-600 text-white rounded-tr-none ml-4'
                     : message.isError
-                    ? 'bg-red-50 text-red-800 rounded-tl-none border border-red-200'
-                    : 'bg-gray-50 text-gray-800 rounded-tl-none border border-gray-200'
+                    ? 'bg-red-50 text-red-800 rounded-tl-none border border-red-200 mr-4'
+                    : 'bg-gray-50 text-gray-800 rounded-tl-none border border-gray-200 mr-4'
                 }`}
               >
-                <div className="flex items-center space-x-2 mb-2">
-                  {message.sender === 'user' ? (
-                    <>
-                      <span className="font-medium text-sm">You</span>
-                      <User className="h-4 w-4" />
-                    </>
-                  ) : (
-                    <>
-                      <Bot className="h-4 w-4" />
-                      <span className="font-medium text-sm">
-                        AI Assistant
-                        {!message.isError && (
-                          <span className="ml-1 text-xs opacity-75">
-                            • {isDevelopment ? 'Local' : 'FastChat-T5'}
-                          </span>
+                <div className={`px-4 py-3 ${message.sender === 'user' ? 'pb-2' : ''}`}>
+                  <div className="flex items-center space-x-2 mb-3">
+                    {message.sender === 'user' ? (
+                      <>
+                        <span className="font-medium text-sm">You</span>
+                        <User className="h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        <Bot className="h-4 w-4" />
+                        <span className="font-medium text-sm">
+                          AI Assistant
+                          {!message.isError && (
+                            <span className="ml-1 text-xs opacity-75">
+                              • {isDevelopment ? 'Local' : 'FastChat-T5'}
+                            </span>
+                          )}
+                        </span>
+                        {message.isError && (
+                          <AlertCircle className="h-4 w-4 text-red-500" />
                         )}
-                      </span>
-                      {message.isError && (
-                        <AlertCircle className="h-4 w-4 text-red-500" />
-                      )}
-                    </>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="prose prose-sm max-w-none">
+                    {message.sender === 'user' ? (
+                      <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {formatMessageContent(message.content)}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Retry button for error messages */}
+                  {message.isError && message.content.includes('try again') && (
+                    <button
+                      onClick={handleRetry}
+                      className="mt-3 flex items-center space-x-1 text-sm text-red-600 hover:text-red-800 transition-colors"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      <span>Retry Question</span>
+                    </button>
                   )}
                 </div>
-                <div className="prose prose-sm max-w-none">
-                  {message.content.includes('##') ? (
-                    // Render markdown-style content
-                    <div 
-                      className="whitespace-pre-wrap"
-                      dangerouslySetInnerHTML={{
-                        __html: message.content
-                          .replace(/## (.*)/g, '<h3 class="font-bold text-lg mb-2 mt-4">$1</h3>')
-                          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                          .replace(/- (.*)/g, '<li class="ml-4">$1</li>')
-                          .replace(/\n\n/g, '<br><br>')
-                      }}
-                    />
-                  ) : (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  )}
-                </div>
-                
-                {/* Retry button for error messages */}
-                {message.isError && message.content.includes('try again') && (
-                  <button
-                    onClick={handleRetry}
-                    className="mt-3 flex items-center space-x-1 text-sm text-red-600 hover:text-red-800 transition-colors"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    <span>Retry Question</span>
-                  </button>
-                )}
               </div>
             </div>
           ))
