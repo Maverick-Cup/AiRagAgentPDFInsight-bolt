@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FileText, FilePlus2, AlertTriangle, Info } from 'lucide-react';
 import { processDocument } from '../services/documentService';
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 export const DocumentPanel: React.FC = () => {
   const { documents, addDocument, removeDocument, setDocumentStatus, setActiveDocumentId, activeDocumentId } = useAppContext();
@@ -15,7 +15,7 @@ export const DocumentPanel: React.FC = () => {
       acceptedFiles.forEach(async (file) => {
         if (file.type === 'application/pdf') {
           if (file.size > MAX_FILE_SIZE) {
-            alert('File size exceeds the maximum limit of 50MB');
+            alert('File size exceeds the maximum limit of 100MB');
             return;
           }
 
@@ -34,6 +34,9 @@ export const DocumentPanel: React.FC = () => {
             setDocumentStatus(newDoc.id, 'processing');
             await processDocument(newDoc);
             setDocumentStatus(newDoc.id, 'ready');
+            
+            // Automatically set this document as active when processing is complete
+            setActiveDocumentId(newDoc.id);
           } catch (error) {
             console.error('Error processing document:', error);
             setDocumentStatus(newDoc.id, 'error');
@@ -41,7 +44,7 @@ export const DocumentPanel: React.FC = () => {
         }
       });
     },
-    [addDocument, setDocumentStatus]
+    [addDocument, setDocumentStatus, setActiveDocumentId]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -83,7 +86,7 @@ export const DocumentPanel: React.FC = () => {
           </p>
           <div className="flex items-center mt-2 text-xs text-gray-500">
             <Info className="h-4 w-4 mr-1" />
-            <span>Maximum file size: 50MB</span>
+            <span>Maximum file size: 100MB</span>
           </div>
         </div>
       </div>
