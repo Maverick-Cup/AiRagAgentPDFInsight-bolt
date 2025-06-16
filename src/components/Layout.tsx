@@ -12,7 +12,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <BookOpenCheck className="h-7 w-7 text-teal-400" />
-            <h1 className="text-xl md:text-2xl font-bold">PDF Insight Agent</h1>
+            <h1 className="text-xl md:text-2xl font-bold">Multi-Format Document AI Agent</h1>
           </div>
           <nav>
             <a
@@ -33,7 +33,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <footer className="bg-gray-800 text-gray-300 py-4">
         <div className="container mx-auto px-4 text-center text-sm">
           <p>
-            Powered by Milvus Vector DB and Agno AI Orchestration
+            Powered by Advanced Document Processing & AI Intelligence
           </p>
         </div>
       </footer>

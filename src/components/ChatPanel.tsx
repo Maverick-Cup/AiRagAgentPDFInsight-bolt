@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Send, Bot, User, Loader2 } from 'lucide-react';
+import { Send, Bot, User, Loader2, Table, FileText, BarChart3 } from 'lucide-react';
 import { getDocumentById } from '../utils/helpers';
 import { processQuestion } from '../services/agentService';
 
@@ -81,29 +81,118 @@ export const ChatPanel: React.FC = () => {
     }
   };
 
+  const handleQuickAction = (action: string) => {
+    setInput(action);
+    inputRef.current?.focus();
+  };
+
   if (!activeDocument) {
     return null;
   }
 
+  const getDocumentTypeInfo = () => {
+    switch (activeDocument.type) {
+      case 'xlsx':
+      case 'xls':
+      case 'csv':
+        return {
+          icon: <Table className="h-5 w-5 text-green-600" />,
+          description: 'Spreadsheet with structured data and tables',
+          suggestions: [
+            'Summarize this spreadsheet',
+            'Show me the table data',
+            'What columns are in this data?',
+            'Calculate totals from the data'
+          ]
+        };
+      case 'pptx':
+      case 'ppt':
+        return {
+          icon: <BarChart3 className="h-5 w-5 text-orange-600" />,
+          description: 'Presentation with slides and visual content',
+          suggestions: [
+            'Summarize this presentation',
+            'What are the main topics?',
+            'Extract key points',
+            'What data is presented?'
+          ]
+        };
+      default:
+        return {
+          icon: <FileText className="h-5 w-5 text-blue-600" />,
+          description: 'Document with text content',
+          suggestions: [
+            'Summarize this document',
+            'What are the main points?',
+            'Extract key information',
+            'Find specific topics'
+          ]
+        };
+    }
+  };
+
+  const docInfo = getDocumentTypeInfo();
+
   return (
     <div className="bg-white rounded-lg shadow-md flex flex-col h-full">
       <div className="p-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">
-          Chat with {activeDocument.name}
-        </h2>
-        <p className="text-sm text-gray-500">
-          Ask questions about the content of this document
+        <div className="flex items-center space-x-2 mb-2">
+          {docInfo.icon}
+          <h2 className="text-lg font-semibold text-gray-800">
+            Chat with {activeDocument.name}
+          </h2>
+        </div>
+        <p className="text-sm text-gray-500 mb-3">
+          {docInfo.description}
         </p>
+        
+        {/* Document metadata */}
+        {activeDocument.metadata && (
+          <div className="flex flex-wrap gap-2 text-xs text-gray-600">
+            {activeDocument.metadata.wordCount && (
+              <span className="bg-blue-100 px-2 py-1 rounded">
+                {activeDocument.metadata.wordCount.toLocaleString()} words
+              </span>
+            )}
+            {activeDocument.metadata.pageCount && (
+              <span className="bg-green-100 px-2 py-1 rounded">
+                {activeDocument.metadata.pageCount} pages
+              </span>
+            )}
+            {activeDocument.metadata.hasTables && (
+              <span className="bg-purple-100 px-2 py-1 rounded">
+                Contains tables
+              </span>
+            )}
+            {activeDocument.metadata.hasImages && (
+              <span className="bg-orange-100 px-2 py-1 rounded">
+                Contains images
+              </span>
+            )}
+          </div>
+        )}
       </div>
       
       <div className="flex-grow overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
-            <Bot className="h-12 w-12 text-blue-500 mb-2" />
-            <p className="max-w-md">
-              I'm your PDF assistant. Ask me anything about the document and I'll try to answer
-              based on its contents. If I can't find the answer in the document, I'll search the web.
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <Bot className="h-12 w-12 text-blue-500 mb-4" />
+            <p className="text-gray-600 mb-4 max-w-md">
+              I'm your intelligent document assistant. I can analyze, summarize, and extract information from your {activeDocument.type.toUpperCase()} file.
             </p>
+            
+            {/* Quick action buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 w-full max-w-md">
+              {docInfo.suggestions.map((suggestion, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleQuickAction(suggestion)}
+                  className="text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-sm"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           messages.map((message) => (
@@ -114,7 +203,7 @@ export const ChatPanel: React.FC = () => {
               }`}
             >
               <div
-                className={`max-w-[80%] rounded-lg p-3 ${
+                className={`max-w-[85%] rounded-lg p-4 ${
                   message.sender === 'user'
                     ? 'bg-blue-600 text-white rounded-tr-none'
                     : message.isError
@@ -122,20 +211,36 @@ export const ChatPanel: React.FC = () => {
                     : 'bg-gray-100 text-gray-800 rounded-tl-none'
                 }`}
               >
-                <div className="flex items-center space-x-2 mb-1">
+                <div className="flex items-center space-x-2 mb-2">
                   {message.sender === 'user' ? (
                     <>
-                      <span className="font-medium">You</span>
+                      <span className="font-medium text-sm">You</span>
                       <User className="h-4 w-4" />
                     </>
                   ) : (
                     <>
                       <Bot className="h-4 w-4" />
-                      <span className="font-medium">Assistant</span>
+                      <span className="font-medium text-sm">Assistant</span>
                     </>
                   )}
                 </div>
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                <div className="prose prose-sm max-w-none">
+                  {message.content.includes('##') ? (
+                    // Render markdown-style content
+                    <div 
+                      className="whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{
+                        __html: message.content
+                          .replace(/## (.*)/g, '<h3 class="font-bold text-lg mb-2 mt-4">$1</h3>')
+                          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                          .replace(/- (.*)/g, '<li class="ml-4">$1</li>')
+                          .replace(/\n\n/g, '<br><br>')
+                      }}
+                    />
+                  ) : (
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                  )}
+                </div>
               </div>
             </div>
           ))
@@ -151,8 +256,8 @@ export const ChatPanel: React.FC = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about the document..."
-              className="w-full border border-gray-300 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              placeholder={`Ask about your ${activeDocument.type.toUpperCase()} document...`}
+              className="w-full border border-gray-300 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               rows={1}
               disabled={isProcessing}
             />
@@ -160,7 +265,7 @@ export const ChatPanel: React.FC = () => {
           <button
             type="submit"
             disabled={!input.trim() || isProcessing}
-            className={`bg-blue-600 text-white rounded-full p-2 ${
+            className={`bg-blue-600 text-white rounded-full p-3 ${
               !input.trim() || isProcessing
                 ? 'opacity-50 cursor-not-allowed'
                 : 'hover:bg-blue-700'
