@@ -86,6 +86,79 @@ export const ChatPanel: React.FC = () => {
     inputRef.current?.focus();
   };
 
+  // Format message content for better readability
+  const formatMessageContent = (content: string) => {
+    // Split content into paragraphs and format
+    const paragraphs = content.split('\n\n').filter(p => p.trim());
+    
+    return paragraphs.map((paragraph, index) => {
+      // Handle headers (##)
+      if (paragraph.startsWith('## ')) {
+        return (
+          <h3 key={index} className="text-lg font-bold mb-3 mt-4 text-gray-900 border-b border-gray-200 pb-2">
+            {paragraph.replace('## ', '')}
+          </h3>
+        );
+      }
+      
+      // Handle bold text (**text**)
+      if (paragraph.includes('**')) {
+        const parts = paragraph.split(/(\*\*.*?\*\*)/g);
+        return (
+          <p key={index} className="mb-3 leading-relaxed">
+            {parts.map((part, partIndex) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return (
+                  <strong key={partIndex} className="font-semibold text-gray-900">
+                    {part.slice(2, -2)}
+                  </strong>
+                );
+              }
+              return part;
+            })}
+          </p>
+        );
+      }
+      
+      // Handle bullet points
+      if (paragraph.includes('- ')) {
+        const lines = paragraph.split('\n');
+        const listItems = [];
+        const regularLines = [];
+        
+        lines.forEach(line => {
+          if (line.trim().startsWith('- ')) {
+            listItems.push(line.trim().substring(2));
+          } else if (line.trim()) {
+            regularLines.push(line.trim());
+          }
+        });
+        
+        return (
+          <div key={index} className="mb-3">
+            {regularLines.length > 0 && (
+              <p className="mb-2 leading-relaxed">{regularLines.join(' ')}</p>
+            )}
+            {listItems.length > 0 && (
+              <ul className="list-disc list-inside space-y-1 ml-4">
+                {listItems.map((item, itemIndex) => (
+                  <li key={itemIndex} className="text-sm leading-relaxed">{item}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      }
+      
+      // Regular paragraphs
+      return (
+        <p key={index} className="mb-3 leading-relaxed">
+          {paragraph}
+        </p>
+      );
+    });
+  };
+
   if (!activeDocument) {
     return null;
   }
@@ -208,10 +281,10 @@ export const ChatPanel: React.FC = () => {
                     ? 'bg-blue-600 text-white rounded-tr-none'
                     : message.isError
                     ? 'bg-red-100 text-red-800 rounded-tl-none'
-                    : 'bg-gray-100 text-gray-800 rounded-tl-none'
+                    : 'bg-gray-50 text-gray-800 rounded-tl-none border border-gray-200'
                 }`}
               >
-                <div className="flex items-center space-x-2 mb-2">
+                <div className="flex items-center space-x-2 mb-3">
                   {message.sender === 'user' ? (
                     <>
                       <span className="font-medium text-sm">You</span>
@@ -219,26 +292,18 @@ export const ChatPanel: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Bot className="h-4 w-4" />
-                      <span className="font-medium text-sm">Assistant</span>
+                      <Bot className="h-4 w-4 text-blue-600" />
+                      <span className="font-medium text-sm text-blue-600">Assistant</span>
                     </>
                   )}
                 </div>
                 <div className="prose prose-sm max-w-none">
-                  {message.content.includes('##') ? (
-                    // Render markdown-style content
-                    <div 
-                      className="whitespace-pre-wrap"
-                      dangerouslySetInnerHTML={{
-                        __html: message.content
-                          .replace(/## (.*)/g, '<h3 class="font-bold text-lg mb-2 mt-4">$1</h3>')
-                          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                          .replace(/- (.*)/g, '<li class="ml-4">$1</li>')
-                          .replace(/\n\n/g, '<br><br>')
-                      }}
-                    />
+                  {message.sender === 'user' ? (
+                    <p className="whitespace-pre-wrap text-sm">{message.content}</p>
                   ) : (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    <div className="text-sm">
+                      {formatMessageContent(message.content)}
+                    </div>
                   )}
                 </div>
               </div>
