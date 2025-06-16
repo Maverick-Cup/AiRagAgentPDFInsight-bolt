@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Send, Bot, User, Loader2, Table, FileText, BarChart3 } from 'lucide-react';
+import { Send, Bot, User, Loader2, Table, FileText, BarChart3, AlertCircle, RefreshCw } from 'lucide-react';
 import { getDocumentById } from '../utils/helpers';
 import { processQuestion } from '../services/agentService';
 
@@ -15,6 +15,7 @@ export const ChatPanel: React.FC = () => {
   } = useAppContext();
   
   const [input, setInput] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   
@@ -39,19 +40,22 @@ export const ChatPanel: React.FC = () => {
     
     if (!input.trim() || !activeDocument || isProcessing) return;
     
+    const userMessage = input.trim();
+    setInput('');
+    setRetryCount(0);
+    
     // Add user message
     addMessage({
-      content: input,
+      content: userMessage,
       sender: 'user',
       timestamp: new Date().toISOString(),
     });
     
-    setInput('');
     setIsProcessing(true);
     
     try {
       // Process the question with the RAG agent
-      const response = await processQuestion(input, activeDocument);
+      const response = await processQuestion(userMessage, activeDocument);
       
       // Add AI response
       addMessage({
@@ -62,15 +66,43 @@ export const ChatPanel: React.FC = () => {
     } catch (error) {
       console.error('Error processing question:', error);
       
+      let errorMessage = 'I encountered an error processing your question. Please try again.';
+      let canRetry = false;
+      
+      if (error instanceof Error) {
+        if (error.message.includes('loading')) {
+          errorMessage = 'The AI model is currently starting up. This usually takes 10-20 seconds. Please try again in a moment.';
+          canRetry = true;
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'There was a network issue. Please check your connection and try again.';
+          canRetry = true;
+        }
+      }
+      
       // Add error message
       addMessage({
-        content: 'Sorry, I encountered an error processing your question. Please try again.',
+        content: errorMessage,
         sender: 'ai',
         timestamp: new Date().toISOString(),
         isError: true,
       });
+      
+      // If it's a retryable error and we haven't retried too many times, suggest retry
+      if (canRetry && retryCount < 2) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+        }, 1000);
+      }
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    const lastUserMessage = messages.filter(m => m.sender === 'user').pop();
+    if (lastUserMessage && !isProcessing) {
+      setInput(lastUserMessage.content);
+      inputRef.current?.focus();
     }
   };
 
@@ -100,9 +132,9 @@ export const ChatPanel: React.FC = () => {
           description: 'Spreadsheet with structured data and tables',
           suggestions: [
             'Summarize this spreadsheet',
-            'Show me the table data',
-            'What columns are in this data?',
-            'Calculate totals from the data'
+            'What data is in this file?',
+            'Show me the key insights',
+            'Analyze the numerical data'
           ]
         };
       case 'pptx':
@@ -114,7 +146,7 @@ export const ChatPanel: React.FC = () => {
             'Summarize this presentation',
             'What are the main topics?',
             'Extract key points',
-            'What data is presented?'
+            'What insights are presented?'
           ]
         };
       default:
@@ -125,7 +157,7 @@ export const ChatPanel: React.FC = () => {
             'Summarize this document',
             'What are the main points?',
             'Extract key information',
-            'Find specific topics'
+            'Explain the content'
           ]
         };
     }
@@ -139,11 +171,16 @@ export const ChatPanel: React.FC = () => {
         <div className="flex items-center space-x-2 mb-2">
           {docInfo.icon}
           <h2 className="text-lg font-semibold text-gray-800">
-            Chat with {activeDocument.name}
+            AI Chat with {activeDocument.name}
           </h2>
+          <div className="ml-auto">
+            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+              Powered by FastChat-T5
+            </span>
+          </div>
         </div>
         <p className="text-sm text-gray-500 mb-3">
-          {docInfo.description}
+          {docInfo.description} • Advanced AI analysis with Hugging Face
         </p>
         
         {/* Document metadata */}
@@ -178,7 +215,7 @@ export const ChatPanel: React.FC = () => {
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Bot className="h-12 w-12 text-blue-500 mb-4" />
             <p className="text-gray-600 mb-4 max-w-md">
-              I'm your intelligent document assistant. I can analyze, summarize, and extract information from your {activeDocument.type.toUpperCase()} file.
+              I'm your intelligent document assistant powered by advanced AI. I can analyze, summarize, and extract insights from your {activeDocument.type.toUpperCase()} file with high accuracy.
             </p>
             
             {/* Quick action buttons */}
@@ -187,11 +224,18 @@ export const ChatPanel: React.FC = () => {
                 <button
                   key={index}
                   onClick={() => handleQuickAction(suggestion)}
-                  className="text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-sm"
+                  className="text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-sm border border-gray-200 hover:border-blue-300"
                 >
                   {suggestion}
                 </button>
               ))}
+            </div>
+            
+            <div className="mt-4 text-xs text-gray-500 bg-blue-50 p-3 rounded-lg">
+              <div className="flex items-center justify-center space-x-1">
+                <Bot className="h-4 w-4" />
+                <span>Responses are generated using FastChat-T5 AI model for maximum accuracy</span>
+              </div>
             </div>
           </div>
         ) : (
@@ -207,8 +251,8 @@ export const ChatPanel: React.FC = () => {
                   message.sender === 'user'
                     ? 'bg-blue-600 text-white rounded-tr-none'
                     : message.isError
-                    ? 'bg-red-100 text-red-800 rounded-tl-none'
-                    : 'bg-gray-100 text-gray-800 rounded-tl-none'
+                    ? 'bg-red-50 text-red-800 rounded-tl-none border border-red-200'
+                    : 'bg-gray-50 text-gray-800 rounded-tl-none border border-gray-200'
                 }`}
               >
                 <div className="flex items-center space-x-2 mb-2">
@@ -220,7 +264,15 @@ export const ChatPanel: React.FC = () => {
                   ) : (
                     <>
                       <Bot className="h-4 w-4" />
-                      <span className="font-medium text-sm">Assistant</span>
+                      <span className="font-medium text-sm">
+                        AI Assistant
+                        {!message.isError && (
+                          <span className="ml-1 text-xs opacity-75">• FastChat-T5</span>
+                        )}
+                      </span>
+                      {message.isError && (
+                        <AlertCircle className="h-4 w-4 text-red-500" />
+                      )}
                     </>
                   )}
                 </div>
@@ -241,6 +293,17 @@ export const ChatPanel: React.FC = () => {
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   )}
                 </div>
+                
+                {/* Retry button for error messages */}
+                {message.isError && message.content.includes('try again') && (
+                  <button
+                    onClick={handleRetry}
+                    className="mt-3 flex items-center space-x-1 text-sm text-red-600 hover:text-red-800 transition-colors"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    <span>Retry Question</span>
+                  </button>
+                )}
               </div>
             </div>
           ))
@@ -256,7 +319,7 @@ export const ChatPanel: React.FC = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`Ask about your ${activeDocument.type.toUpperCase()} document...`}
+              placeholder={`Ask about your ${activeDocument.type.toUpperCase()} document... (powered by AI)`}
               className="w-full border border-gray-300 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               rows={1}
               disabled={isProcessing}
@@ -278,6 +341,13 @@ export const ChatPanel: React.FC = () => {
             )}
           </button>
         </div>
+        
+        {isProcessing && (
+          <div className="mt-2 text-xs text-gray-500 flex items-center space-x-1">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span>AI is analyzing your document and generating a response...</span>
+          </div>
+        )}
       </form>
     </div>
   );
