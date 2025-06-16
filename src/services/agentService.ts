@@ -2,7 +2,7 @@ import { Document, TableData } from '../types';
 import { searchVectorDb, getDocumentMetadata, getAllChunks } from './vectorDbService';
 
 /**
- * Process a user question using the RAG agent with Hugging Face LLM
+ * Process a user question using the RAG agent with fallback to local processing
  */
 export const processQuestion = async (
   question: string,
@@ -27,17 +27,25 @@ export const processQuestion = async (
     const relevantContext = await searchVectorDb(question, collectionName);
     
     if (relevantContext.length > 0) {
-      // Use document context to generate response with LLM
-      console.log('Found relevant context in the document');
-      return await generateLLMResponse(question, relevantContext.join('\n\n'), document.type);
+      // Try LLM first, fallback to local processing
+      try {
+        return await generateLLMResponse(question, relevantContext.join('\n\n'), document.type);
+      } catch (llmError) {
+        console.warn('LLM service unavailable, using local processing:', llmError);
+        return generateLocalResponse(question, relevantContext, document);
+      }
     }
     
     // Step 2: If no specific context found, use general document content
     const allChunks = getAllChunks(collectionName);
     if (allChunks.length > 0) {
-      // Use first few chunks as context
       const generalContext = allChunks.slice(0, 3).join('\n\n');
-      return await generateLLMResponse(question, generalContext, document.type);
+      try {
+        return await generateLLMResponse(question, generalContext, document.type);
+      } catch (llmError) {
+        console.warn('LLM service unavailable, using local processing:', llmError);
+        return generateLocalResponse(question, [generalContext], document);
+      }
     }
     
     // Step 3: If no content available, provide helpful guidance
@@ -45,24 +53,28 @@ export const processQuestion = async (
     
   } catch (error) {
     console.error('Error in RAG agent:', error);
-    
-    // Provide user-friendly error message
-    if (error instanceof Error && error.message.includes('loading')) {
-      return "The AI model is currently starting up. Please wait a moment and try your question again.";
-    }
-    
     return "I encountered an issue processing your question. Please try rephrasing it or ask something else about the document.";
   }
 };
 
 /**
- * Generate response using Hugging Face LLM via Netlify function
+ * Generate response using Hugging Face LLM via Netlify function (production) or fallback (development)
  */
 const generateLLMResponse = async (
   question: string,
   context: string,
   documentType: string
 ): Promise<string> => {
+  // Check if we're in development mode
+  const isDevelopment = window.location.hostname === 'localhost' || 
+                       window.location.hostname.includes('webcontainer') ||
+                       window.location.hostname.includes('local-credentialless');
+  
+  if (isDevelopment) {
+    console.log('Development mode detected, using local processing');
+    throw new Error('LLM service not available in development mode');
+  }
+
   try {
     // Prepare enhanced prompt based on document type
     let enhancedPrompt = question;
@@ -112,6 +124,60 @@ const generateLLMResponse = async (
 };
 
 /**
+ * Generate response using local processing (fallback for development)
+ */
+const generateLocalResponse = (
+  question: string,
+  context: string[],
+  document: Document
+): string => {
+  const contextText = context.join(' ');
+  const questionLower = question.toLowerCase();
+  
+  // Enhanced response generation based on document type and content
+  if (document.type === 'xlsx' || document.type === 'xls' || document.type === 'csv') {
+    if (questionLower.includes('total') || questionLower.includes('sum')) {
+      return `Based on the spreadsheet data, I can see numerical information that would allow for calculations. The data contains various columns with quantitative values. For specific totals or sums, please specify which column or data range you're interested in analyzing.\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+    }
+    
+    if (questionLower.includes('column') || questionLower.includes('header')) {
+      return `The spreadsheet contains multiple columns with structured data. Each column represents a different data category or metric. The headers organize the information for easy reference and analysis.\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+    }
+    
+    if (questionLower.includes('about') || questionLower.includes('content')) {
+      return `This is a ${document.type.toUpperCase()} spreadsheet file containing structured data in tabular format. The file includes multiple columns and rows with various data points that can be analyzed for insights and patterns.\n\n**Key Features:**\n- Structured tabular data\n- Multiple data categories\n- Suitable for analysis and reporting\n- Contains quantitative information\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+    }
+  }
+  
+  if (document.type === 'pptx' || document.type === 'ppt') {
+    if (questionLower.includes('about') || questionLower.includes('content')) {
+      return `This is a ${document.type.toUpperCase()} presentation file containing slides with information, likely including text, images, and structured content for communication purposes.\n\n**Key Features:**\n- Presentation format\n- Visual content structure\n- Information organized in slides\n- Designed for communication\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+    }
+  }
+  
+  // Content-based responses for text documents
+  if (contextText.includes('revenue') || contextText.includes('sales') || contextText.includes('financial')) {
+    return `Based on the document, I found financial information including revenue and sales data. Here's what I can tell you: ${contextText.substring(0, 300)}...\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+  }
+  
+  if (contextText.includes('forecast') || contextText.includes('outlook') || contextText.includes('prediction')) {
+    return `According to the document, there are forecasts and outlook information: ${contextText.substring(0, 300)}...\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+  }
+  
+  if (contextText.includes('data') || contextText.includes('analysis') || contextText.includes('results')) {
+    return `The document contains analytical information and data: ${contextText.substring(0, 300)}...\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+  }
+  
+  // Generic response with context
+  if (contextText.length > 0) {
+    return `Based on the information in the document: ${contextText.substring(0, 400)}${contextText.length > 400 ? '...' : ''}\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+  }
+  
+  // Fallback response
+  return `I can see this is a ${document.type.toUpperCase()} document, but I need more specific information to provide a detailed answer. Could you please ask a more specific question about the document's content?\n\n**Note:** This is a local analysis. For more detailed AI insights, please deploy the application.`;
+};
+
+/**
  * Check if the question is asking for a summary
  */
 const isRequestForSummary = (question: string): boolean => {
@@ -130,7 +196,7 @@ const isRequestForTables = (question: string): boolean => {
 };
 
 /**
- * Generate a summary of the document using LLM
+ * Generate a summary of the document
  */
 const generateSummary = async (collectionName: string, document: Document, question: string): Promise<string> => {
   const allChunks = getAllChunks(collectionName);
@@ -171,7 +237,7 @@ const generateSummary = async (collectionName: string, document: Document, quest
 };
 
 /**
- * Extract and format table data using LLM
+ * Extract and format table data
  */
 const extractTables = async (collectionName: string, document: Document, question: string): Promise<string> => {
   const metadata = getDocumentMetadata(collectionName);
@@ -213,9 +279,20 @@ const generateFallbackSummary = (document: Document, metadata: any, allChunks: s
     summary += `\n`;
   }
 
-  const contentSample = allChunks.slice(0, 2).join(' ').substring(0, 400);
-  summary += `**Content Preview:**\n${contentSample}...\n\n`;
-  summary += `**Note:** Full AI analysis is temporarily unavailable. Please try again in a moment for enhanced insights.`;
+  if (document.type === 'xlsx' || document.type === 'xls' || document.type === 'csv') {
+    summary += `**Content Overview:**\nThis spreadsheet contains structured data with multiple columns and rows. The document includes numerical data, categories, and various data points that can be analyzed for insights, trends, and patterns.\n\n`;
+    summary += `**Key Features:**\n- Structured tabular data\n- Multiple data categories\n- Suitable for analysis and reporting\n- Contains quantitative information\n\n`;
+  } else if (document.type === 'pptx' || document.type === 'ppt') {
+    summary += `**Content Overview:**\nThis presentation contains slides with information, likely including text, images, and structured content for communication purposes.\n\n`;
+    summary += `**Key Features:**\n- Presentation format\n- Visual content structure\n- Information organized in slides\n- Designed for communication\n\n`;
+  } else {
+    const contentSample = allChunks.slice(0, 2).join(' ').substring(0, 400);
+    summary += `**Content Preview:**\n${contentSample}...\n\n`;
+    summary += `**Key Features:**\n- Text-based content\n- ${Math.ceil(allChunks.length / 10)} main sections identified\n- Comprehensive information coverage\n- Searchable content\n\n`;
+  }
+
+  summary += `**Usage Tips:**\n- Ask specific questions about the content\n- Request data extraction for spreadsheets\n- Inquire about specific topics or sections\n- Ask for detailed analysis of particular areas\n\n`;
+  summary += `**Note:** This is a local analysis. For enhanced AI-powered insights, please deploy the application to access the full Hugging Face integration.`;
 
   return summary;
 };
@@ -226,15 +303,31 @@ const generateFallbackSummary = (document: Document, metadata: any, allChunks: s
 const generateFallbackTableResponse = (document: Document, metadata: any): string => {
   if (document.type === 'xlsx' || document.type === 'xls' || document.type === 'csv') {
     return `## Table Data from ${document.name}\n\n` +
-           `This spreadsheet contains structured data in tabular format. The AI analysis is temporarily unavailable, but you can ask specific questions about:\n\n` +
-           `- Column headers and data structure\n` +
-           `- Specific rows or data ranges\n` +
-           `- Calculations and summaries\n` +
-           `- Data patterns and insights\n\n` +
-           `Please try your question again in a moment for detailed AI analysis.`;
+           `This spreadsheet contains structured data in tabular format. The data includes:\n\n` +
+           `- Multiple columns with headers\n` +
+           `- Rows of data entries\n` +
+           `- Numerical and text values\n` +
+           `- Organized information suitable for analysis\n\n` +
+           `**To get specific data:**\n` +
+           `- Ask about specific columns or rows\n` +
+           `- Request data filtering or sorting\n` +
+           `- Inquire about calculations or summaries\n` +
+           `- Ask for data visualization insights\n\n` +
+           `**Example questions:**\n` +
+           `- "What are the column headers?"\n` +
+           `- "Show me the first 10 rows"\n` +
+           `- "What's the total of column X?"\n` +
+           `- "Find rows where column Y equals Z"\n\n` +
+           `**Note:** This is a local analysis. For enhanced AI-powered insights, please deploy the application.`;
   }
 
   return `## Table Information from ${document.name}\n\n` +
-         `Tables have been detected in this document. AI analysis is temporarily unavailable, but you can ask specific questions about the table content.\n\n` +
-         `Please try again in a moment for detailed insights.`;
+         `Tables have been detected in this document. The structured data can be analyzed and extracted based on your specific needs.\n\n` +
+         `**Available Operations:**\n` +
+         `- Extract specific table data\n` +
+         `- Analyze numerical information\n` +
+         `- Compare data across tables\n` +
+         `- Generate insights from structured content\n\n` +
+         `Please ask specific questions about the table data you're interested in.\n\n` +
+         `**Note:** This is a local analysis. For enhanced AI-powered insights, please deploy the application.`;
 };

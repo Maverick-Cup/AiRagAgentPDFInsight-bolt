@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Send, Bot, User, Loader2, Table, FileText, BarChart3, AlertCircle, RefreshCw } from 'lucide-react';
+import { Send, Bot, User, Loader2, Table, FileText, BarChart3, AlertCircle, RefreshCw, Info } from 'lucide-react';
 import { getDocumentById } from '../utils/helpers';
 import { processQuestion } from '../services/agentService';
 
@@ -22,6 +22,11 @@ export const ChatPanel: React.FC = () => {
   const activeDocument = activeDocumentId 
     ? getDocumentById(documents, activeDocumentId) 
     : null;
+
+  // Check if we're in development mode
+  const isDevelopment = window.location.hostname === 'localhost' || 
+                       window.location.hostname.includes('webcontainer') ||
+                       window.location.hostname.includes('local-credentialless');
 
   useEffect(() => {
     // Scroll to bottom of messages
@@ -173,15 +178,34 @@ export const ChatPanel: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-800">
             AI Chat with {activeDocument.name}
           </h2>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center space-x-2">
+            {isDevelopment && (
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full flex items-center">
+                <Info className="h-3 w-3 mr-1" />
+                Local Mode
+              </span>
+            )}
             <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-              Powered by FastChat-T5
+              {isDevelopment ? 'Local Analysis' : 'Powered by FastChat-T5'}
             </span>
           </div>
         </div>
         <p className="text-sm text-gray-500 mb-3">
-          {docInfo.description} • Advanced AI analysis with Hugging Face
+          {docInfo.description} • {isDevelopment ? 'Local processing with basic AI features' : 'Advanced AI analysis with Hugging Face'}
         </p>
+        
+        {/* Development mode notice */}
+        {isDevelopment && (
+          <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-start space-x-2">
+              <Info className="h-4 w-4 text-yellow-600 mt-0.5" />
+              <div className="text-sm text-yellow-800">
+                <p className="font-medium">Development Mode Active</p>
+                <p>You're using local processing. Deploy the app to access full AI capabilities with Hugging Face integration.</p>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Document metadata */}
         {activeDocument.metadata && (
@@ -215,7 +239,7 @@ export const ChatPanel: React.FC = () => {
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Bot className="h-12 w-12 text-blue-500 mb-4" />
             <p className="text-gray-600 mb-4 max-w-md">
-              I'm your intelligent document assistant powered by advanced AI. I can analyze, summarize, and extract insights from your {activeDocument.type.toUpperCase()} file with high accuracy.
+              I'm your intelligent document assistant {isDevelopment ? 'with local processing capabilities' : 'powered by advanced AI'}. I can analyze, summarize, and extract insights from your {activeDocument.type.toUpperCase()} file {isDevelopment ? 'using local algorithms' : 'with high accuracy'}.
             </p>
             
             {/* Quick action buttons */}
@@ -234,7 +258,12 @@ export const ChatPanel: React.FC = () => {
             <div className="mt-4 text-xs text-gray-500 bg-blue-50 p-3 rounded-lg">
               <div className="flex items-center justify-center space-x-1">
                 <Bot className="h-4 w-4" />
-                <span>Responses are generated using FastChat-T5 AI model for maximum accuracy</span>
+                <span>
+                  {isDevelopment 
+                    ? 'Local processing provides basic analysis. Deploy for full AI capabilities.' 
+                    : 'Responses are generated using FastChat-T5 AI model for maximum accuracy'
+                  }
+                </span>
               </div>
             </div>
           </div>
@@ -267,7 +296,9 @@ export const ChatPanel: React.FC = () => {
                       <span className="font-medium text-sm">
                         AI Assistant
                         {!message.isError && (
-                          <span className="ml-1 text-xs opacity-75">• FastChat-T5</span>
+                          <span className="ml-1 text-xs opacity-75">
+                            • {isDevelopment ? 'Local' : 'FastChat-T5'}
+                          </span>
                         )}
                       </span>
                       {message.isError && (
@@ -319,7 +350,7 @@ export const ChatPanel: React.FC = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`Ask about your ${activeDocument.type.toUpperCase()} document... (powered by AI)`}
+              placeholder={`Ask about your ${activeDocument.type.toUpperCase()} document... ${isDevelopment ? '(local processing)' : '(powered by AI)'}`}
               className="w-full border border-gray-300 rounded-lg py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               rows={1}
               disabled={isProcessing}
@@ -345,7 +376,12 @@ export const ChatPanel: React.FC = () => {
         {isProcessing && (
           <div className="mt-2 text-xs text-gray-500 flex items-center space-x-1">
             <Loader2 className="h-3 w-3 animate-spin" />
-            <span>AI is analyzing your document and generating a response...</span>
+            <span>
+              {isDevelopment 
+                ? 'Processing your question with local algorithms...' 
+                : 'AI is analyzing your document and generating a response...'
+              }
+            </span>
           </div>
         )}
       </form>
