@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Send, Bot, User, Loader2, Table, FileText, BarChart3 } from 'lucide-react';
+import { Send, Bot, User, Loader2, Table, FileText, BarChart3, Route, Sparkles } from 'lucide-react';
 import { getDocumentById } from '../utils/helpers';
 import { processQuestion } from '../services/agentService';
 
@@ -50,14 +50,17 @@ export const ChatPanel: React.FC = () => {
     setIsProcessing(true);
     
     try {
-      // Process the question with the RAG agent
-      const response = await processQuestion(input, activeDocument);
+      // Process the question with the FLAIR-style routing agent
+      const result = await processQuestion(input, activeDocument);
       
-      // Add AI response
+      // Add AI response with routing metadata
       addMessage({
-        content: response,
+        content: result.response,
         sender: 'ai',
         timestamp: new Date().toISOString(),
+        routing: result.routing,
+        tableData: result.tableData,
+        hasTable: !!result.tableData,
       });
     } catch (error) {
       console.error('Error processing question:', error);
@@ -249,9 +252,19 @@ export const ChatPanel: React.FC = () => {
       <div className="flex-grow overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <Bot className="h-12 w-12 text-blue-500 mb-4" />
-            <p className="text-gray-600 mb-4 max-w-md">
-              I'm your intelligent document assistant. I can analyze, summarize, and extract information from your {activeDocument.type.toUpperCase()} file.
+            <div className="flex items-center justify-center mb-4">
+              <div className="relative">
+                <div className="absolute inset-0 bg-blue-200 rounded-full blur-xl opacity-50"></div>
+                <div className="relative bg-gradient-to-br from-blue-500 to-blue-700 rounded-full p-4">
+                  <Sparkles className="h-10 w-10 text-white" />
+                </div>
+              </div>
+            </div>
+            <p className="text-gray-600 mb-2 max-w-md">
+              I'm your intelligent document assistant powered by FLAIR-style NLP routing.
+            </p>
+            <p className="text-xs text-gray-400 mb-4 max-w-md">
+              I classify each question using a zero-shot model, then route it to the best strategy — semantic search, summarization, table extraction, or key point analysis.
             </p>
             
             {/* Quick action buttons */}
@@ -294,6 +307,13 @@ export const ChatPanel: React.FC = () => {
                     <>
                       <Bot className="h-4 w-4 text-blue-600" />
                       <span className="font-medium text-sm text-blue-600">Assistant</span>
+                      {message.routing && (
+                        <span className="flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full ml-1">
+                          <Route className="h-3 w-3" />
+                          {message.routing.route}
+                          <span className="text-blue-400">· {(message.routing.confidence * 100).toFixed(0)}%</span>
+                        </span>
+                      )}
                     </>
                   )}
                 </div>
@@ -303,12 +323,44 @@ export const ChatPanel: React.FC = () => {
                   ) : (
                     <div className="text-sm">
                       {formatMessageContent(message.content)}
+                      {message.hasTable && message.tableData && (
+                        <div className="mt-4 overflow-x-auto">
+                          <table className="min-w-full text-xs border border-gray-300 rounded">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                {message.tableData.headers.map((header, i) => (
+                                  <th key={i} className="px-3 py-2 text-left font-semibold text-gray-700 border-b border-gray-300">
+                                    {header}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {message.tableData.rows.map((row, i) => (
+                                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                  {row.map((cell, j) => (
+                                    <td key={j} className="px-3 py-2 text-gray-600 border-b border-gray-200">
+                                      {cell}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
             </div>
           ))
+        )}
+        {isProcessing && (
+          <div className="px-4 py-2 flex items-center gap-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+            <span className="animate-pulse">Classifying question and routing to best strategy...</span>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>

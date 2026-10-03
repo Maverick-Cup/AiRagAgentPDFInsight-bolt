@@ -23,11 +23,12 @@ export const processDocument = async (document: Document): Promise<void> => {
     // Split text into chunks
     const chunks = chunkText(processedContent.text);
     
-    // Store chunks in vector DB with metadata
+    // Store chunks in vector DB with metadata and tables
     await setupVectorDb({
       collectionName: `doc_${document.id}`,
       chunks,
       metadata: processedContent.metadata,
+      tables: processedContent.tables,
     });
     
     // Update document with metadata

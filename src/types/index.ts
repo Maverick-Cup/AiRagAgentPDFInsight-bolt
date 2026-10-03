@@ -42,6 +42,7 @@ export interface Message {
   isError?: boolean;
   hasTable?: boolean;
   tableData?: TableData;
+  routing?: RoutingInfo;
 }
 
 export interface TableData {
@@ -54,6 +55,12 @@ export interface VectorDbConfig {
   collectionName: string;
   chunks?: string[];
   metadata?: DocumentMetadata;
+  tables?: TableData[];
+}
+
+export interface RoutingInfo {
+  route: string;
+  confidence: number;
 }
 
 export interface AgentConfig {

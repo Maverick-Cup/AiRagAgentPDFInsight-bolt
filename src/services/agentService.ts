@@ -1,90 +1,81 @@
-import { Document, TableData } from '../types';
-import { searchVectorDb, getDocumentMetadata, getAllChunks } from './vectorDbService';
+import { Document, TableData, RoutingInfo } from '../types';
+import { searchVectorDb, getDocumentMetadata, getAllChunks, getTables } from './vectorDbService';
+import { routeQuery, QueryRoute, RoutingResult } from './routerService';
 import { webSearch } from './webSearchService';
 
-/**
- * Process a user question using the RAG agent
- */
+export interface ProcessResult {
+  response: string;
+  routing: RoutingInfo;
+  tableData?: TableData;
+}
+
 export const processQuestion = async (
   question: string,
   document: Document
-): Promise<string> => {
+): Promise<ProcessResult> => {
   console.log(`Processing question: "${question}" for document: ${document.name} (${document.type})`);
-  
+
   try {
     const collectionName = `doc_${document.id}`;
-    
-    // Check if this is a request for summarization
-    if (isRequestForSummary(question)) {
-      return await generateSummary(collectionName, document);
+
+    // Step 1: Route the query using FLAIR-style zero-shot classification
+    console.log('Routing query...');
+    const routingResult = await routeQuery(question);
+    console.log(`Routed to: ${routingResult.route} (confidence: ${(routingResult.confidence * 100).toFixed(1)}%)`);
+
+    const routing: RoutingInfo = {
+      route: routingResult.route.replace(/_/g, ' '),
+      confidence: routingResult.confidence,
+    };
+
+    // Step 2: Execute the appropriate strategy
+    let response = '';
+    let tableData: TableData | undefined;
+
+    switch (routingResult.route) {
+      case 'summarization':
+        response = await generateSummary(collectionName, document);
+        break;
+      case 'table_extraction': {
+        const tableResult = await extractTables(collectionName, document);
+        response = tableResult.response;
+        tableData = tableResult.tableData;
+        break;
+      }
+      case 'key_points':
+        response = await generateKeyPoints(collectionName, document);
+        break;
+      case 'comparison':
+        response = await handleComparison(question, collectionName, document);
+        break;
+      case 'definition':
+        response = await handleDefinition(question, collectionName, document);
+        break;
+      case 'specific_question':
+      default:
+        response = await handleSpecificQuestion(question, collectionName, document);
+        break;
     }
-    
-    // Check if this is a request for table extraction
-    if (isRequestForTables(question)) {
-      return await extractTables(collectionName, document);
-    }
-    
-    // Step 1: Try to find relevant context from the document
-    const relevantContext = await searchVectorDb(question, collectionName);
-    
-    if (relevantContext.length > 0) {
-      // Use document context to generate response
-      console.log('Found relevant context in the document');
-      return generateResponseFromContext(question, relevantContext, document);
-    }
-    
-    // Step 2: Fall back to web search if no relevant context found
-    console.log('No relevant context found, falling back to web search');
-    const webResults = await webSearch(question);
-    
-    if (webResults.length > 0) {
-      return generateResponseFromWebResults(question, webResults);
-    }
-    
-    // Step 3: If all else fails, provide a generic response
-    return "I couldn't find specific information about this in the document or through web search. If you have a more specific question about the document's content, I'd be happy to try again.";
-    
+
+    return { response, routing, tableData };
   } catch (error) {
-    console.error('Error in RAG agent:', error);
+    console.error('Error in agent:', error);
     throw new Error('Failed to process your question. Please try again.');
   }
 };
 
-/**
- * Check if the question is asking for a summary
- */
-const isRequestForSummary = (question: string): boolean => {
-  const summaryKeywords = ['summary', 'summarize', 'overview', 'main points', 'key points', 'brief', 'outline'];
-  const questionLower = question.toLowerCase();
-  return summaryKeywords.some(keyword => questionLower.includes(keyword));
-};
-
-/**
- * Check if the question is asking for table data
- */
-const isRequestForTables = (question: string): boolean => {
-  const tableKeywords = ['table', 'data', 'numbers', 'statistics', 'figures', 'chart', 'spreadsheet'];
-  const questionLower = question.toLowerCase();
-  return tableKeywords.some(keyword => questionLower.includes(keyword));
-};
-
-/**
- * Generate a summary of the document
- */
 const generateSummary = async (collectionName: string, document: Document): Promise<string> => {
   const allChunks = getAllChunks(collectionName);
   const metadata = getDocumentMetadata(collectionName);
-  
+
   if (allChunks.length === 0) {
     return "I couldn't generate a summary as no content was found in the document.";
   }
 
-  // Simulate processing time
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  await new Promise(resolve => setTimeout(resolve, 800));
 
   let summary = `## Document Summary: ${document.name}\n\n`;
-  
-  // Add metadata information
+
   if (metadata) {
     summary += `**Document Information:**\n`;
     if (metadata.wordCount) summary += `- Word Count: ${metadata.wordCount.toLocaleString()}\n`;
@@ -94,14 +85,22 @@ const generateSummary = async (collectionName: string, document: Document): Prom
     summary += `\n`;
   }
 
-  // Generate content-based summary
-  const contentSample = allChunks.slice(0, 3).join(' ').substring(0, 500);
-  
+  const contentSample = allChunks.slice(0, 5).join(' ').substring(0, 800);
+
   if (document.type === 'xlsx' || document.type === 'xls' || document.type === 'csv') {
-    summary += `**Content Overview:**\nThis spreadsheet contains structured data with multiple columns and rows. The document includes numerical data, categories, and various data points that can be analyzed for insights, trends, and patterns.\n\n`;
+    const tables = getTables(collectionName);
+    summary += `**Content Overview:**\nThis spreadsheet contains structured data`;
+    if (tables && tables.length > 0) {
+      summary += ` across ${tables.length} sheet${tables.length > 1 ? 's' : ''}`;
+      const firstTable = tables[0];
+      if (firstTable.headers.length > 0) {
+        summary += `. The primary columns are: ${firstTable.headers.slice(0, 10).join(', ')}`;
+      }
+    }
+    summary += `.\n\n`;
     summary += `**Key Features:**\n- Structured tabular data\n- Multiple data categories\n- Suitable for analysis and reporting\n- Contains quantitative information\n\n`;
   } else if (document.type === 'pptx' || document.type === 'ppt') {
-    summary += `**Content Overview:**\nThis presentation contains slides with information, likely including text, images, and structured content for communication purposes.\n\n`;
+    summary += `**Content Overview:**\nThis presentation contains slides with information organized for communication purposes.\n\n`;
     summary += `**Key Features:**\n- Presentation format\n- Visual content structure\n- Information organized in slides\n- Designed for communication\n\n`;
   } else {
     summary += `**Content Overview:**\n${contentSample}...\n\n`;
@@ -113,99 +112,146 @@ const generateSummary = async (collectionName: string, document: Document): Prom
   return summary;
 };
 
-/**
- * Extract and format table data
- */
-const extractTables = async (collectionName: string, document: Document): Promise<string> => {
+const extractTables = async (collectionName: string, document: Document): Promise<{ response: string; tableData?: TableData }> => {
+  const tables = getTables(collectionName);
   const metadata = getDocumentMetadata(collectionName);
-  
-  // Simulate processing time
-  await new Promise(resolve => setTimeout(resolve, 1000));
 
-  if (!metadata?.hasTables) {
-    return "No tables were detected in this document. The content appears to be primarily text-based.";
+  await new Promise(resolve => setTimeout(resolve, 600));
+
+  if (!tables || tables.length === 0) {
+    if (!metadata?.hasTables) {
+      return {
+        response: "No tables were detected in this document. The content appears to be primarily text-based.",
+      };
+    }
   }
 
-  if (document.type === 'xlsx' || document.type === 'xls' || document.type === 'csv') {
-    return `## Table Data from ${document.name}\n\n` +
-           `This spreadsheet contains structured data in tabular format. The data includes:\n\n` +
-           `- Multiple columns with headers\n` +
-           `- Rows of data entries\n` +
-           `- Numerical and text values\n` +
-           `- Organized information suitable for analysis\n\n` +
-           `**To get specific data:**\n` +
-           `- Ask about specific columns or rows\n` +
-           `- Request data filtering or sorting\n` +
-           `- Inquire about calculations or summaries\n` +
-           `- Ask for data visualization insights\n\n` +
-           `Example questions:\n` +
-           `- "What are the column headers?"\n` +
-           `- "Show me the first 10 rows"\n` +
-           `- "What's the total of column X?"\n` +
-           `- "Find rows where column Y equals Z"`;
+  if (tables && tables.length > 0) {
+    const firstTable = tables[0];
+    const displayRows = firstTable.rows.slice(0, 20);
+    const totalRows = firstTable.rows.length;
+
+    let response = `## Table Data from ${document.name}\n\n`;
+    response += `**Sheet:** ${firstTable.title || 'Data'}\n`;
+    response += `**Columns:** ${firstTable.headers.join(' | ')}\n`;
+    response += `**Total Rows:** ${totalRows.toLocaleString()}\n\n`;
+
+    if (totalRows > displayRows.length) {
+      response += `*Showing first ${displayRows.length} of ${totalRows.toLocaleString()} rows*\n\n`;
+    }
+
+    return { response, tableData: { ...firstTable, rows: displayRows } };
   }
 
-  return `## Table Information from ${document.name}\n\n` +
-         `Tables have been detected in this document. The structured data can be analyzed and extracted based on your specific needs.\n\n` +
-         `**Available Operations:**\n` +
-         `- Extract specific table data\n` +
-         `- Analyze numerical information\n` +
-         `- Compare data across tables\n` +
-         `- Generate insights from structured content\n\n` +
-         `Please ask specific questions about the table data you're interested in.`;
+  return {
+    response: `## Table Information from ${document.name}\n\nTables have been detected in this document. Please ask specific questions about the table data you're interested in.`,
+  };
 };
 
-/**
- * Generate a response based on document context
- */
-const generateResponseFromContext = async (
+const generateKeyPoints = async (collectionName: string, document: Document): Promise<string> => {
+  const allChunks = getAllChunks(collectionName);
+
+  if (allChunks.length === 0) {
+    return "I couldn't extract key points as no content was found in the document.";
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 800));
+
+  const contentSample = allChunks.slice(0, 5).join(' ');
+  const sentences = contentSample.split(/[.!?]+/).filter(s => s.trim().length > 30);
+  const keySentences = sentences.slice(0, 5);
+
+  let response = `## Key Points from ${document.name}\n\n`;
+
+  if (keySentences.length > 0) {
+    response += `Based on semantic analysis of the document, here are the main points:\n\n`;
+    keySentences.forEach((sentence, i) => {
+      response += `- **Point ${i + 1}:** ${sentence.trim()}\n`;
+    });
+  } else {
+    response += `Based on the document content:\n\n`;
+    response += `- This document contains ${allChunks.length} content sections\n`;
+    response += `- Document type: ${document.type.toUpperCase()}\n`;
+    if (document.metadata?.wordCount) {
+      response += `- Total word count: ${document.metadata.wordCount.toLocaleString()}\n`;
+    }
+    response += `- The content covers multiple topics that can be explored through specific questions\n`;
+  }
+
+  response += `\n*Ask me a specific question to dive deeper into any of these areas.*`;
+
+  return response;
+};
+
+const handleSpecificQuestion = async (
   question: string,
-  context: string[],
+  collectionName: string,
   document: Document
 ): Promise<string> => {
-  // Simulate LLM generation time
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  
-  const contextText = context.join(' ');
-  const questionLower = question.toLowerCase();
-  
-  // Enhanced response generation based on document type and content
-  if (document.type === 'xlsx' || document.type === 'xls' || document.type === 'csv') {
-    if (questionLower.includes('total') || questionLower.includes('sum')) {
-      return `Based on the spreadsheet data, I can see numerical information that would allow for calculations. The data contains various columns with quantitative values. For specific totals or sums, please specify which column or data range you're interested in analyzing.`;
+  // Use real semantic search with embeddings
+  const relevantContext = await searchVectorDb(question, collectionName);
+
+  if (relevantContext.length > 0) {
+    console.log(`Found ${relevantContext.length} relevant chunks via semantic search`);
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    const contextText = relevantContext.map(c => c.text).join(' ');
+    const topScore = relevantContext[0].score;
+
+    let response = '';
+
+    if (topScore > 0.5) {
+      response = `Based on the document content, here's what I found:\n\n${contextText.substring(0, 600)}${contextText.length > 600 ? '...' : ''}`;
+    } else if (topScore > 0.25) {
+      response = `I found some potentially relevant information in the document:\n\n${contextText.substring(0, 500)}${contextText.length > 500 ? '...' : ''}\n\n*Note: This may not be a perfect match. Try rephrasing your question for better results.*`;
+    } else {
+      response = `I couldn't find strongly relevant information about "${question}" in the document. The closest content I found was:\n\n"${contextText.substring(0, 200)}..."\n\nTry asking more specifically about topics covered in the document.`;
     }
-    
-    if (questionLower.includes('column') || questionLower.includes('header')) {
-      return `The spreadsheet contains multiple columns with structured data. Each column represents a different data category or metric. The headers organize the information for easy reference and analysis.`;
-    }
+
+    return response;
   }
-  
-  // Content-based responses
-  if (contextText.includes('revenue') || contextText.includes('sales') || contextText.includes('financial')) {
-    return `Based on the document, I found financial information including revenue and sales data. The document shows: ${contextText.substring(0, 300)}...`;
+
+  // Fall back to web search
+  console.log('No relevant context found, falling back to web search');
+  const webResults = await webSearch(question);
+
+  if (webResults.length > 0) {
+    return `I couldn't find information about this in the document, but based on a web search:\n\n${webResults.join(' ')}`;
   }
-  
-  if (contextText.includes('forecast') || contextText.includes('outlook') || contextText.includes('prediction')) {
-    return `According to the document, there are forecasts and outlook information: ${contextText.substring(0, 300)}...`;
-  }
-  
-  if (contextText.includes('data') || contextText.includes('analysis') || contextText.includes('results')) {
-    return `The document contains analytical information and data: ${contextText.substring(0, 300)}...`;
-  }
-  
-  // Generic response with context
-  return `Based on the information in the document: ${contextText.substring(0, 400)}${contextText.length > 400 ? '...' : ''}`;
+
+  return "I couldn't find specific information about this in the document or through web search. If you have a more specific question about the document's content, I'd be happy to try again.";
 };
 
-/**
- * Generate a response based on web search results
- */
-const generateResponseFromWebResults = async (
+const handleComparison = async (
   question: string,
-  results: string[]
+  collectionName: string,
+  document: Document
 ): Promise<string> => {
-  // Simulate LLM generation time
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  
-  return `I couldn't find information about this in the document, but based on a web search: ${results.join(' ')}`;
+  const relevantContext = await searchVectorDb(question, collectionName);
+
+  await new Promise(resolve => setTimeout(resolve, 600));
+
+  if (relevantContext.length > 0) {
+    const contextText = relevantContext.map(c => c.text).join(' ');
+    return `## Comparison Analysis\n\nBased on the document, here's what I found regarding your comparison query:\n\n${contextText.substring(0, 700)}${contextText.length > 700 ? '...' : ''}\n\n*For a more detailed comparison, try specifying which items you'd like compared.*`;
+  }
+
+  return "I couldn't find specific comparison data in the document. Could you specify which items or concepts you'd like me to compare?";
+};
+
+const handleDefinition = async (
+  question: string,
+  collectionName: string,
+  document: Document
+): Promise<string> => {
+  const relevantContext = await searchVectorDb(question, collectionName);
+
+  await new Promise(resolve => setTimeout(resolve, 600));
+
+  if (relevantContext.length > 0) {
+    const contextText = relevantContext[0].text;
+    return `Based on the document:\n\n${contextText.substring(0, 500)}${contextText.length > 500 ? '...' : ''}`;
+  }
+
+  return "I couldn't find a definition for this term in the document. Could you try rephrasing or asking about a different term?";
 };

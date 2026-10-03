@@ -8,13 +8,15 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          pdfjs: ['pdfjs-dist']
+          pdfjs: ['pdfjs-dist'],
+          transformers: ['@huggingface/transformers']
         }
       }
     }
   },
   optimizeDeps: {
-    include: ['pdfjs-dist']
+    include: ['pdfjs-dist'],
+    exclude: ['@huggingface/transformers']
   },
   server: {
     host: true

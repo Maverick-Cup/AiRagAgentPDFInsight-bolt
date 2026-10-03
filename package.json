@@ -5,6 +5,7 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
     "@supabase/supabase-js": "^2.39.7",
     "lucide-react": "^0.344.0",
     "mammoth": "^1.6.0",
