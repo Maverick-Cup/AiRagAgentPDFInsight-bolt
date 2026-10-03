@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useAppContext } from '../context/AppContext';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,19 +10,22 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 export const DocumentPanel: React.FC = () => {
   const { documents, addDocument, removeDocument, setDocumentStatus, setActiveDocumentId, activeDocumentId } = useAppContext();
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
+      setUploadError(null);
+
       acceptedFiles.forEach(async (file) => {
         const documentType = getDocumentType(file);
         
         if (documentType === 'unknown') {
-          alert(`Unsupported file type: ${file.type || 'unknown'}. Please upload a supported document format.`);
+          setUploadError(`Unsupported file type. Choose one of the formats listed below.`);
           return;
         }
 
         if (file.size > MAX_FILE_SIZE) {
-          alert('File size exceeds the maximum limit of 100MB');
+          setUploadError('That file is larger than the 100MB limit.');
           return;
         }
 
@@ -54,10 +57,14 @@ export const DocumentPanel: React.FC = () => {
     [addDocument, setDocumentStatus, setActiveDocumentId]
   );
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     onDrop,
     accept: getSupportedFormats(),
     maxSize: MAX_FILE_SIZE,
+    noClick: true,
+    onDropRejected: () => {
+      setUploadError('This file type is not supported or the file is larger than 100MB.');
+    },
   });
 
   const handleDocumentClick = (id: string) => {
@@ -95,7 +102,7 @@ export const DocumentPanel: React.FC = () => {
       
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-6 mb-4 transition-colors duration-200 ${
+        className={`border-2 border-dashed rounded-lg p-6 mb-4 cursor-pointer transition-colors duration-200 ${
           isDragActive
             ? 'border-blue-500 bg-blue-50'
             : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
@@ -105,10 +112,20 @@ export const DocumentPanel: React.FC = () => {
         <div className="flex flex-col items-center text-center">
           <FilePlus2 className="h-10 w-10 text-blue-500 mb-2" />
           <p className="text-sm text-gray-600 mb-2">
-            {isDragActive
-              ? 'Drop the files here...'
-              : 'Drag & drop documents here, or click to select'}
+            {isDragActive ? 'Drop the files here...' : 'Drag & drop documents here'}
           </p>
+          <button
+            type="button"
+            onClick={open}
+            className="mb-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            Choose a file
+          </button>
+          {uploadError && (
+            <p role="alert" className="mb-3 text-xs font-medium text-red-600">
+              {uploadError}
+            </p>
+          )}
           <div className="text-xs text-gray-500 space-y-1">
             <div className="flex items-center justify-center">
               <Info className="h-4 w-4 mr-1" />
