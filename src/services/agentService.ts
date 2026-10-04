@@ -1,4 +1,4 @@
-import { Document, TableData, RoutingInfo } from '../types';
+import { Document, Message, TableData, RoutingInfo } from '../types';
 import { searchVectorDb, getDocumentMetadata, getAllChunks, getTables } from './vectorDbService';
 import { routeQuery, QueryRoute, RoutingResult } from './routerService';
 
@@ -10,7 +10,8 @@ export interface ProcessResult {
 
 export const processQuestion = async (
   question: string,
-  document: Document
+  document: Document,
+  conversation: Message[] = []
 ): Promise<ProcessResult> => {
   console.log(`Processing question: "${question}" for document: ${document.name} (${document.type})`);
 
@@ -52,7 +53,7 @@ export const processQuestion = async (
         break;
       case 'specific_question':
       default:
-        response = await handleSpecificQuestion(question, collectionName, document);
+        response = await handleSpecificQuestion(question, collectionName, document, conversation);
         break;
     }
 
@@ -218,10 +219,15 @@ const generateKeyPoints = async (collectionName: string, document: Document): Pr
 const handleSpecificQuestion = async (
   question: string,
   collectionName: string,
-  document: Document
+  document: Document,
+  conversation: Message[]
 ): Promise<string> => {
-  // Use real semantic search with embeddings
-  const relevantContext = await searchVectorDb(question, collectionName);
+  const recentUserMessages = conversation
+    .filter(message => message.sender === 'user')
+    .slice(-3)
+    .map(message => message.content);
+  const retrievalQuestion = [...recentUserMessages, question].join(' ');
+  const relevantContext = await searchVectorDb(retrievalQuestion, collectionName);
 
   if (relevantContext.length > 0) {
     console.log(`Found ${relevantContext.length} relevant chunks via semantic search`);

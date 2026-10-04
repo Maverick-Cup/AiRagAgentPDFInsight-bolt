@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Send, Bot, User, Loader2, Table, FileText, BarChart3, Route, Sparkles } from 'lucide-react';
+import { Send, Bot, User, Loader2, Table, FileText, BarChart3, Route, Sparkles, MessageSquarePlus, History } from 'lucide-react';
 import { getDocumentById } from '../utils/helpers';
 import { processQuestion } from '../services/agentService';
 
@@ -8,10 +8,14 @@ export const ChatPanel: React.FC = () => {
   const { 
     documents, 
     activeDocumentId, 
-    messages, 
-    addMessage, 
-    isProcessing, 
-    setIsProcessing 
+    messages,
+    addMessage,
+    sessions,
+    activeSessionId,
+    createSession,
+    setActiveSessionId,
+    isProcessing,
+    setIsProcessing
   } = useAppContext();
   
   const [input, setInput] = useState('');
@@ -51,7 +55,7 @@ export const ChatPanel: React.FC = () => {
     
     try {
       // Process the question with the FLAIR-style routing agent
-      const result = await processQuestion(input, activeDocument);
+      const result = await processQuestion(input, activeDocument, messages);
       
       // Add AI response with routing metadata
       addMessage({
@@ -221,6 +225,34 @@ export const ChatPanel: React.FC = () => {
         <p className="text-sm text-gray-500 mb-3">
           {docInfo.description}
         </p>
+
+        <div className="flex items-center gap-2 mb-3">
+          <History className="h-4 w-4 text-gray-400" />
+          <select
+            aria-label="Chat session"
+            value={activeSessionId}
+            onChange={(event) => {
+              setActiveSessionId(event.target.value);
+              setInput('');
+            }}
+            className="min-w-0 flex-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {sessions.map(session => (
+              <option key={session.id} value={session.id}>
+                {session.title}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={createSession}
+            className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50"
+            title="Start a new chat session"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            New chat
+          </button>
+        </div>
         
         {/* Document metadata */}
         {activeDocument.metadata && (

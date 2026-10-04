@@ -1,6 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { Document, Message } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: string;
+}
 
 interface AppContextType {
   documents: Document[];
@@ -9,6 +15,10 @@ interface AppContextType {
   setDocumentStatus: (id: string, status: 'uploading' | 'processing' | 'ready' | 'error') => void;
   activeDocumentId: string | null;
   setActiveDocumentId: (id: string | null) => void;
+  sessions: ChatSession[];
+  activeSessionId: string;
+  createSession: () => void;
+  setActiveSessionId: (id: string) => void;
   messages: Message[];
   addMessage: (message: Omit<Message, 'id'>) => void;
   clearMessages: () => void;
@@ -17,39 +27,72 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-const MESSAGE_STORAGE_KEY = 'messages-v2';
+const SESSION_STORAGE_KEY = 'document-ai-sessions-v1';
+const DEFAULT_SESSION_TITLE = 'New conversation';
+
+type StoredSessionState = {
+  sessions: ChatSession[];
+  messagesBySession: Record<string, Message[]>;
+};
+
+const createChatSession = (): ChatSession => ({
+  id: uuidv4(),
+  title: DEFAULT_SESSION_TITLE,
+  createdAt: new Date().toISOString(),
+});
+
+const getInitialSessionState = (): StoredSessionState => {
+  const session = createChatSession();
+  return { sessions: [session], messagesBySession: { [session.id]: [] } };
+};
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const initialState = getInitialSessionState();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>(initialState.sessions);
+  const [activeSessionId, setActiveSessionId] = useState(initialState.sessions[0].id);
+  const [messagesBySession, setMessagesBySession] = useState<Record<string, Message[]>>(initialState.messagesBySession);
   const [isProcessing, setIsProcessing] = useState(false);
+  const hasLoadedState = useRef(false);
 
-  // Load state from localStorage on component mount
   useEffect(() => {
     const savedDocuments = localStorage.getItem('documents');
-    const savedMessages = localStorage.getItem(MESSAGE_STORAGE_KEY);
+    const savedSessionState = localStorage.getItem(SESSION_STORAGE_KEY);
     const savedActiveDocumentId = localStorage.getItem('activeDocumentId');
 
     if (savedDocuments) {
       setDocuments(JSON.parse(savedDocuments));
     }
-    if (savedMessages) {
-      setMessages(JSON.parse(savedMessages));
+
+    if (savedSessionState) {
+      const parsedState = JSON.parse(savedSessionState) as StoredSessionState;
+      if (parsedState.sessions.length > 0) {
+        setSessions(parsedState.sessions);
+        setMessagesBySession(parsedState.messagesBySession);
+        setActiveSessionId(parsedState.sessions[0].id);
+      }
     }
+
     if (savedActiveDocumentId) {
       setActiveDocumentId(savedActiveDocumentId);
     }
+
+    hasLoadedState.current = true;
   }, []);
 
-  // Save state to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('documents', JSON.stringify(documents));
   }, [documents]);
 
   useEffect(() => {
-    localStorage.setItem(MESSAGE_STORAGE_KEY, JSON.stringify(messages));
-  }, [messages]);
+    if (hasLoadedState.current) {
+      localStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({ sessions, messagesBySession })
+      );
+    }
+  }, [sessions, messagesBySession]);
 
   useEffect(() => {
     if (activeDocumentId) {
@@ -60,11 +103,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [activeDocumentId]);
 
   const addDocument = (doc: Document) => {
-    setDocuments((prev) => [...prev, doc]);
+    setDocuments(previousDocuments => [...previousDocuments, doc]);
   };
 
   const removeDocument = (id: string) => {
-    setDocuments((prev) => prev.filter((doc) => doc.id !== id));
+    setDocuments(previousDocuments => previousDocuments.filter(doc => doc.id !== id));
     if (activeDocumentId === id) {
       setActiveDocumentId(null);
       clearMessages();
@@ -72,19 +115,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const setDocumentStatus = (id: string, status: 'uploading' | 'processing' | 'ready' | 'error') => {
-    setDocuments((prev) =>
-      prev.map((doc) => (doc.id === id ? { ...doc, status } : doc))
+    setDocuments(previousDocuments =>
+      previousDocuments.map(doc => (doc.id === id ? { ...doc, status } : doc))
     );
+  };
+
+  const createSession = () => {
+    const session = createChatSession();
+    setSessions(previousSessions => [session, ...previousSessions]);
+    setMessagesBySession(previousMessages => ({ ...previousMessages, [session.id]: [] }));
+    setActiveSessionId(session.id);
+    setIsProcessing(false);
   };
 
   const addMessage = (message: Omit<Message, 'id'>) => {
     const newMessage = { ...message, id: uuidv4() };
-    setMessages((prev) => [...prev, newMessage]);
+    setMessagesBySession(previousMessages => ({
+      ...previousMessages,
+      [activeSessionId]: [...(previousMessages[activeSessionId] ?? []), newMessage],
+    }));
+
+    if (message.sender === 'user') {
+      setSessions(previousSessions => previousSessions.map(session => {
+        if (session.id !== activeSessionId || session.title !== DEFAULT_SESSION_TITLE) {
+          return session;
+        }
+        return { ...session, title: message.content.slice(0, 42) || DEFAULT_SESSION_TITLE };
+      }));
+    }
   };
 
   const clearMessages = () => {
-    setMessages([]);
+    setMessagesBySession(previousMessages => ({ ...previousMessages, [activeSessionId]: [] }));
   };
+
+  const messages = messagesBySession[activeSessionId] ?? [];
 
   return (
     <AppContext.Provider
@@ -95,6 +160,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setDocumentStatus,
         activeDocumentId,
         setActiveDocumentId,
+        sessions,
+        activeSessionId,
+        createSession,
+        setActiveSessionId,
         messages,
         addMessage,
         clearMessages,
