@@ -1,7 +1,6 @@
 import { Document, TableData, RoutingInfo } from '../types';
 import { searchVectorDb, getDocumentMetadata, getAllChunks, getTables } from './vectorDbService';
 import { routeQuery, QueryRoute, RoutingResult } from './routerService';
-import { webSearch } from './webSearchService';
 
 export interface ProcessResult {
   response: string;
@@ -211,15 +210,7 @@ const handleSpecificQuestion = async (
     return response;
   }
 
-  // Fall back to web search
-  console.log('No relevant context found, falling back to web search');
-  const webResults = await webSearch(question);
-
-  if (webResults.length > 0) {
-    return `I couldn't find information about this in the document, but based on a web search:\n\n${webResults.join(' ')}`;
-  }
-
-  return "I couldn't find specific information about this in the document or through web search. If you have a more specific question about the document's content, I'd be happy to try again.";
+  return `I couldn't find an answer to that in "${document.name}". Try asking about a specific topic, heading, term, or section from the document.`;
 };
 
 const handleComparison = async (

@@ -17,6 +17,7 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+const MESSAGE_STORAGE_KEY = 'messages-v2';
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -27,7 +28,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Load state from localStorage on component mount
   useEffect(() => {
     const savedDocuments = localStorage.getItem('documents');
-    const savedMessages = localStorage.getItem('messages');
+    const savedMessages = localStorage.getItem(MESSAGE_STORAGE_KEY);
     const savedActiveDocumentId = localStorage.getItem('activeDocumentId');
 
     if (savedDocuments) {
@@ -47,7 +48,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [documents]);
 
   useEffect(() => {
-    localStorage.setItem('messages', JSON.stringify(messages));
+    localStorage.setItem(MESSAGE_STORAGE_KEY, JSON.stringify(messages));
   }, [messages]);
 
   useEffect(() => {

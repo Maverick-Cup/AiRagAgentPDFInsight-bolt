@@ -15,6 +15,22 @@ interface VectorStoreEntry {
 
 const vectorStore: { [key: string]: VectorStoreEntry } = {};
 
+const tokenize = (text: string): string[] =>
+  text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+
+const lexicalScore = (question: string, text: string): number => {
+  const questionTerms = new Set(tokenize(question).filter(term => term.length > 2));
+  if (questionTerms.size === 0) return 0;
+
+  const textTerms = new Set(tokenize(text));
+  let matches = 0;
+  questionTerms.forEach(term => {
+    if (textTerms.has(term)) matches += 1;
+  });
+
+  return matches / questionTerms.size;
+};
+
 export const setupVectorDb = async (config: VectorDbConfig): Promise<void> => {
   const { collectionName, chunks = [], metadata, tables } = config;
 
@@ -48,15 +64,23 @@ export const searchVectorDb = async (
 
   const queryEmbedding = await embed(question);
 
-  const scored = entry.chunks.map(chunk => ({
-    text: chunk.text,
-    score: cosineSimilarity(queryEmbedding, chunk.embedding),
-  }));
+  const scored = entry.chunks.map(chunk => {
+    const semanticScore = cosineSimilarity(queryEmbedding, chunk.embedding);
+    const keywordScore = lexicalScore(question, chunk.text);
+
+    return {
+      text: chunk.text,
+      score: Math.max(semanticScore, keywordScore),
+      semanticScore,
+      keywordScore,
+    };
+  });
 
   return scored
-    .filter(s => s.score > 0.15)
+    .filter(result => result.semanticScore > 0.15 || result.keywordScore > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
+    .slice(0, topK)
+    .map(({ text, score }) => ({ text, score }));
 };
 
 export const getDocumentMetadata = (collectionName: string): DocumentMetadata | undefined => {
