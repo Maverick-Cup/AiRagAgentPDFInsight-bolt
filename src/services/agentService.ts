@@ -87,17 +87,8 @@ const generateSummary = async (collectionName: string, document: Document): Prom
   const contentSample = allChunks.slice(0, 5).join(' ').substring(0, 800);
 
   if (document.type === 'xlsx' || document.type === 'xls' || document.type === 'csv') {
-    const tables = getTables(collectionName);
-    summary += `**Content Overview:**\nThis spreadsheet contains structured data`;
-    if (tables && tables.length > 0) {
-      summary += ` across ${tables.length} sheet${tables.length > 1 ? 's' : ''}`;
-      const firstTable = tables[0];
-      if (firstTable.headers.length > 0) {
-        summary += `. The primary columns are: ${firstTable.headers.slice(0, 10).join(', ')}`;
-      }
-    }
-    summary += `.\n\n`;
-    summary += `**Key Features:**\n- Structured tabular data\n- Multiple data categories\n- Suitable for analysis and reporting\n- Contains quantitative information\n\n`;
+    const tables = getTables(collectionName) ?? [];
+    summary += buildTableSummary(tables);
   } else if (document.type === 'pptx' || document.type === 'ppt') {
     summary += `**Content Overview:**\nThis presentation contains slides with information organized for communication purposes.\n\n`;
     summary += `**Key Features:**\n- Presentation format\n- Visual content structure\n- Information organized in slides\n- Designed for communication\n\n`;
@@ -109,6 +100,48 @@ const generateSummary = async (collectionName: string, document: Document): Prom
   summary += `**Usage Tips:**\n- Ask specific questions about the content\n- Request data extraction for spreadsheets\n- Inquire about specific topics or sections\n- Ask for detailed analysis of particular areas`;
 
   return summary;
+};
+
+const buildTableSummary = (tables: TableData[]): string => {
+  if (tables.length === 0) {
+    return '**Content Overview:**\\nNo rows were extracted from this spreadsheet.\\n\\n';
+  }
+
+  const lines: string[] = [
+    `**Content Overview:**\\nThis spreadsheet contains ${tables.length} ${tables.length === 1 ? 'table' : 'tables'}.`,
+  ];
+
+  tables.forEach((table, tableIndex) => {
+    lines.push(`\\n**${table.title || `Table ${tableIndex + 1}`}**`);
+    lines.push(`- Rows: ${table.rows.length.toLocaleString()}`);
+    lines.push(`- Columns: ${table.headers.join(', ') || 'No column headers detected'}`);
+
+    const numericColumns = table.headers
+      .map((header, columnIndex) => {
+        const values = table.rows
+          .map(row => Number(String(row[columnIndex] ?? '').replace(/[$,%\\s,]/g, '')))
+          .filter(value => Number.isFinite(value));
+
+        if (values.length < 2) return null;
+        return `${header}: ${Math.min(...values)} to ${Math.max(...values)}`;
+      })
+      .filter((value): value is string => value !== null);
+
+    if (numericColumns.length > 0) {
+      lines.push(`- Numeric ranges: ${numericColumns.join('; ')}`);
+    }
+
+    const sampleRows = table.rows.slice(0, 2).map(row =>
+      row.map((value, index) => `${table.headers[index] || `Column ${index + 1}`}: ${value}`).join(' | ')
+    );
+
+    if (sampleRows.length > 0) {
+      lines.push(`- Sample records: ${sampleRows.join(' / ')}`);
+    }
+  });
+
+  lines.push('\\nThis summary is calculated from the extracted spreadsheet rows.');
+  return `${lines.join('\\n')}\\n\\n`;
 };
 
 const extractTables = async (collectionName: string, document: Document): Promise<{ response: string; tableData?: TableData }> => {

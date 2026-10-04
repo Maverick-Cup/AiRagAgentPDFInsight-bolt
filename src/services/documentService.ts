@@ -252,19 +252,19 @@ const extractFromExcel = async (file: File): Promise<ProcessedContent> => {
 const extractFromCsv = async (file: File): Promise<ProcessedContent> => {
   try {
     const text = await file.text();
-    const lines = text.split('\n').filter(line => line.trim());
-    
-    if (lines.length === 0) {
+    if (!text.trim()) {
       throw new Error('CSV file appears to be empty');
     }
 
-    // Parse CSV (simple implementation)
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const rows = lines.slice(1).map(line => 
-      line.split(',').map(cell => cell.trim().replace(/"/g, ''))
-    );
+    const workbook = XLSX.read(text, { type: 'string', raw: true });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as unknown[][];
+    const [headerRow = [], ...dataRows] = jsonData;
+    const headers = headerRow.map(value => String(value));
+    const rows = dataRows.map(row => headers.map((_, index) => String(row[index] ?? '')));
 
-    const table = {
+    const table: TableData = {
       title: 'CSV Data',
       headers,
       rows,
@@ -272,11 +272,13 @@ const extractFromCsv = async (file: File): Promise<ProcessedContent> => {
 
     const metadata: DocumentMetadata = {
       wordCount: text.split(/\s+/).filter(word => word.length > 0).length,
-      hasTables: true,
+      hasTables: headers.length > 0,
     };
 
+    const normalizedText = [headers.join(' '), ...rows.map(row => row.join(' '))].join('\n');
+
     return {
-      text: `CSV Data:\n${text}`,
+      text: `CSV Data:\n${normalizedText}`,
       tables: [table],
       metadata,
     };

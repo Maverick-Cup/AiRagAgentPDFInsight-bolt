@@ -39,6 +39,17 @@ const getClassifier = async () => {
 };
 
 export const routeQuery = async (question: string): Promise<RoutingResult> => {
+  const normalizedQuestion = question.toLowerCase().trim();
+  const directRoute = getDirectRoute(normalizedQuestion);
+
+  if (directRoute) {
+    return {
+      route: directRoute,
+      confidence: 0.99,
+      scores: { ...createEmptyScores(), [directRoute]: 0.99 },
+    };
+  }
+
   const classifier = await getClassifier();
   const labels = Object.keys(ROUTE_LABELS) as QueryRoute[];
   const candidateTexts = labels.map(l => ROUTE_LABELS[l]);
@@ -64,4 +75,38 @@ export const routeQuery = async (question: string): Promise<RoutingResult> => {
     confidence: bestScore,
     scores,
   };
+};
+
+const createEmptyScores = (): Record<QueryRoute, number> => ({
+  summarization: 0,
+  table_extraction: 0,
+  key_points: 0,
+  specific_question: 0,
+  comparison: 0,
+  definition: 0,
+});
+
+const getDirectRoute = (question: string): QueryRoute | null => {
+  if (/\b(summary|summarize|overview|brief|describe)\b/.test(question)) {
+    return 'summarization';
+  }
+
+  if (/\b(table|rows|columns|spreadsheet|csv|excel|extract|statistics|stats)\b/.test(question) &&
+      /\b(show|list|extract|display|give|what|which|how many|statistics|stats)\b/.test(question)) {
+    return 'table_extraction';
+  }
+
+  if (/\b(key points|main points|highlights|takeaways|main ideas)\b/.test(question)) {
+    return 'key_points';
+  }
+
+  if (/\b(compare|comparison|difference|similar|versus|vs\.)\b/.test(question)) {
+    return 'comparison';
+  }
+
+  if (/\b(what is|what are|define|definition|meaning of|explain)\b/.test(question)) {
+    return 'definition';
+  }
+
+  return null;
 };
